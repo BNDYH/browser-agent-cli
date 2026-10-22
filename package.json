@@ -1,0 +1,32 @@
+{
+  "name": "browser-agent-cli",
+  "version": "0.1.0",
+  "description": "On-demand CLI control for a local Chrome browser",
+  "type": "module",
+  "bin": {
+    "dt": "./bin/dt.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "skills",
+    "scripts",
+    "extension",
+    "companion/menubar",
+    "companion/package.json",
+    "companion/README.md"
+  ],
+  "scripts": {
+    "demo": "node scripts/demo.mjs",
+    "test": "node --test test/unit/*.test.js",
+    "test:integration": "node --test test/integration/*.test.js",
+    "install-skill": "node scripts/install-skill.js"
+  },
+  "dependencies": {
+    "playwright-core": "^1.63.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "DT Browser Bridge",
+  "version": "0.2.0",
+  "description": "Connect dt CLI to existing Chrome tabs through a local native messaging host.",
+  "minimum_chrome_version": "125",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjxZsWfSHrZWxGnoW/yjQbuky9BYzXkvxf6o0yC4lG8xVIN6tXSvUUIMopxCwtEdJ0y8euYeweckKoBxcxgOtAuZ0Ac4DDphGqsqbh+ikWeF1sw7949aH/yyaUGaxawQZ1EvzaS2bWZoF6qwdkNbDTtbH+x/sD2gC4gsz/hhCz5sEff7BAneoa9km5n6mq59I3tAj0V7zdbi12yzdPUqr8EBwdmXJaf7YBlZEIcaytHtmmm92n7pjKibst7rm8uTJYMh0XegL5Dd/fGwjp2vJiiQ90dxppt2Gk54EvjC4K86Tvj/ycOwmz0BGUS7JgQ7NlGavcEei/Jx5qnu8jcOQgwIDAQAB",
+  "permissions": ["debugger", "tabs", "nativeMessaging", "storage"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_popup": "popup.html", "default_title": "DT Browser Bridge" }
+}

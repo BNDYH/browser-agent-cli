@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><title>DT Browser Bridge</title>
+<link rel="stylesheet" href="popup.css">
+<body><h1>DT Browser Bridge</h1><p id="status" role="status">正在读取连接状态…</p>
+<p>连接后，dt 可以操作当前 Chrome 的网页和登录态。只在选中的标签页启用调试。</p>
+<button id="connect">连接本机 dt</button><button id="disconnect">断开连接</button>
+<p class="hint">首次使用：先运行 <code>dt extension install</code>。断开连接会停止控制，保留网页。</p>
+<script src="popup.js" type="module"></script></body></html>

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'none'">
+  <title>DT 页面预览</title><link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="drag-surface" aria-hidden="true"></div>
+  <header><div><span class="label">DT · 当前页面</span><h1 id="title">等待浏览器操作</h1></div>
+    <button id="open-page" title="打开当前页面" aria-label="打开当前页面" disabled>
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M14 4h6v6M20 4l-9 9M10 5H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-4"/>
+      </svg>
+    </button>
+  </header>
+  <main><img id="preview" alt="当前操作页面的缩略图" hidden><p id="empty">操作页面后，预览会显示在这里</p></main>
+  <footer id="status">等待连接</footer>
+  <p id="notice" role="status" hidden></p>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
