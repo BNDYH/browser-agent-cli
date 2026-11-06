@@ -5,3 +5,18 @@ node_modules/
 .idea/
 artifacts/
 docs
+assets/
+
+# Local environment and credentials (keep sanitized templates shareable).
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Network captures may contain credentials and business data.
+*.har

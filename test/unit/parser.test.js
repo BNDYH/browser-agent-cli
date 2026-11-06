@@ -33,6 +33,15 @@ test('leaves default port resolution to daemon config', () => {
   assert.deepEqual(toRpcCommand(parseArgv(['connect', '9333'])), ['connect', { port: 9333 }]);
 });
 
+test('connection preview options and explicit toggles', () => {
+  assert.deepEqual(toRpcCommand(parseArgv(['connect', '--no-companion'])), ['connect', { port: undefined, companion: false }]);
+  assert.equal(toRpcCommand(parseArgv(['launch', '--no-companion']))[1].companion, false);
+  assert.deepEqual(toRpcCommand(parseArgv(['companion', 'off'])), ['companion', { enabled: false }]);
+  assert.deepEqual(toRpcCommand(parseArgv(['companion'])), ['companion', {}]);
+  assert.throws(() => toRpcCommand(parseArgv(['companion', 'invalid'])));
+  assert.throws(() => toRpcCommand(parseArgv(['title', '--no-companion'])));
+});
+
 test('rejects malformed and destructive ambiguous requests before starting daemon', () => {
   for (const args of [ ['connect', 'https://remote.test'], ['launch', '--port', '0'], ['waitms', '-1'],
     ['wait', 'input', '--timeout', 'NaN'], ['ck', 'set', 'key'], ['ck', 'unknown'],

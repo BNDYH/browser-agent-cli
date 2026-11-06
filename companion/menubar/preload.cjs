@@ -1,7 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('dt', {
   preview: () => ipcRenderer.invoke('dt:preview'),
-  openPage: () => ipcRenderer.invoke('dt:open-page'),
+  openPage: (id) => ipcRenderer.invoke('dt:open-page', id),
   pointerInside: () => ipcRenderer.invoke('dt:pointer-inside'),
   drag: (type, screenX, screenY) => ipcRenderer.send('dt:drag', { type, screenX, screenY }),
   onPointerInside: (callback) => {

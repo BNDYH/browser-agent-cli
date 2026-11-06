@@ -3,14 +3,14 @@ import { DtError } from './errors.js';
 export const METHODS = new Set(['launch', 'connect', 'disconnect', 'status', 'kill', 'tabs', 'use', 'new', 'goto',
   'reload', 'back', 'snapshot', 'shot', 'title', 'url', 'reqs', 'req', 'res', 'har', 'reqclear',
   'click', 'dblclick', 'type', 'fill', 'select', 'wait', 'waitms', 'eval', 'ls.elements',
-  'ck.get', 'ck.set', 'ck.clear', 'ls.get', 'ls.set', 'overlay', 'run']);
+  'ck.get', 'ck.set', 'ck.clear', 'ls.get', 'ls.set', 'overlay', 'companion', 'run', 'open', 'finish']);
 
 export function validateCommand(method, params = {}) {
   if (!METHODS.has(method)) throw new DtError(`unknown method: ${method}`, -32601);
   const bad = (message) => { throw new DtError(message, -32602); };
   if (!params || Array.isArray(params) || typeof params !== 'object') bad('params must be an object');
   const required = {
-    use: ['id'], goto: ['url'], click: ['selector'], dblclick: ['selector'], type: ['selector', 'text'],
+    use: ['id'], goto: ['url'], open: ['url'], click: ['selector'], dblclick: ['selector'], type: ['selector', 'text'],
     fill: ['selector', 'text'], select: ['selector', 'value'], wait: ['selector'], eval: ['expression'],
     'ls.elements': ['selector'], 'ck.set': ['key', 'value'], 'ls.set': ['key', 'value'], run: ['file'],
   };
@@ -26,9 +26,11 @@ export function validateCommand(method, params = {}) {
   if (params.extension !== undefined && (method !== 'connect' || typeof params.extension !== 'boolean' || params.port !== undefined)) bad('connect --extension cannot take a CDP port');
   if (['req', 'res'].includes(method) && params.n === undefined) bad('request number required');
   if (method === 'overlay' && typeof params.enabled !== 'boolean') bad('overlay requires on or off');
+  if (method === 'companion' && params.enabled !== undefined && typeof params.enabled !== 'boolean') bad('companion requires on or off');
+  if (params.companion !== undefined && (!['connect', 'launch'].includes(method) || typeof params.companion !== 'boolean')) bad('companion is a boolean connection option');
   if (params.browser && !params.daemon) bad('--browser requires kill --daemon');
   if (method === 'kill' && params.session && params.daemon) bad('--session and --daemon cannot be combined');
-  if (['goto', 'new'].includes(method) && params.url) {
+  if (['goto', 'new', 'open'].includes(method) && params.url) {
     let url;
     try { url = new URL(params.url); } catch { bad('a complete URL is required'); }
     if (!['http:', 'https:', 'about:', 'file:', 'data:'].includes(url.protocol)) bad('unsupported URL protocol');

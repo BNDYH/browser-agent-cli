@@ -26,6 +26,7 @@ export class BrowserAgentApi {
     this.revision = 0;
     this.emit = (event) => onEvent({ ...event, revision: ++this.revision, ts: Date.now() });
     this.commands = new Map();
+    this.companionAutoShow = true;
     this.scopes = new ScopeStore();
     this.extensionBridge = new ExtensionBridge();
     this.cdpConnection = new Connection(config, () => {
@@ -86,6 +87,7 @@ export class BrowserAgentApi {
     return { type: 'daemon.status', revision: this.revision, ts: Date.now(),
       daemon: this.stopping ? 'stopping' : 'running', browser: this.connection.connected ? 'connected' : 'disconnected',
       backend: this.backend, idleMs: Date.now() - this.lastActiveAt, idleTimeoutMs: this.config.idleTimeoutMs,
+      companionAutoShow: this.companionAutoShow,
       activeCount: this.busyScopes.size, scopes: [...this.scopes.scopes.values()].map((scope) => this.scopeSnapshot(scope)) };
   }
 
@@ -118,6 +120,13 @@ export class BrowserAgentApi {
   async dispatch(method, params = {}, identity) {
     if (method === '_preview') return this.preview(params, identity);
     validateCommand(method, params);
+    if (method === 'companion') {
+      if (params.enabled !== undefined) {
+        this.companionAutoShow = params.enabled;
+        this.emit(this.eventSnapshot());
+      }
+      return { ok: true, autoShow: this.companionAutoShow };
+    }
     const key = scopeKey(identity);
     if (this.stopping) throw new DtError('daemon is shutting down', -32002);
     if (method === 'status') return this.status(identity);
@@ -141,7 +150,8 @@ export class BrowserAgentApi {
     runtime.current = { cmd: method, startedAt: started };
     this.commands.set(key, runtime);
     if (fresh) this.emit({ type: 'scope.create', scope: key, state: this.scopeSnapshot(scope) });
-    this.emit({ type: 'cmd.start', scope: key, cmd: method, startedAt: started, tabId: scope.currentTabId });
+    this.emit({ type: 'cmd.start', scope: key, cmd: method, startedAt: started, tabId: scope.currentTabId,
+      companionAutoShow: ['connect', 'launch'].includes(method) ? params.companion !== false && !params.headless : this.companionAutoShow });
     let tabId, token, renewal, result;
     try {
       if (method === 'launch' || method === 'connect') {
@@ -159,6 +169,7 @@ export class BrowserAgentApi {
         result = method === 'launch'
           ? await this.connection.launch({ port: params.port, profile: params.profile, headless: params.headless })
           : await this.connection.connect(params.port ?? this.config.port);
+        this.companionAutoShow = params.companion !== false && !params.headless;
         if (previousId && previousId !== this.connection.browserId) {
           for (const state of this.scopes.scopes.values()) {
             state.currentTabId = null; state.ownedTabs.clear(); state.reqCache.length = 0;
@@ -169,6 +180,11 @@ export class BrowserAgentApi {
       } else if (method === 'disconnect') {
         this.tabs.reset();
         result = await this.connection.disconnect();
+      } else if (method === 'finish') {
+        // Release the observer target, preserving the browser page and ownership.
+        scope.currentTabId = null;
+        this.emit({ type: 'tab.change', scope: key, tabId: null, reason: 'finish' });
+        result = { ok: true, finished: true };
       } else if (method === 'kill') {
         result = await this.kill(params, identity, scope);
       } else if (CACHE.has(method)) {
@@ -184,23 +200,42 @@ export class BrowserAgentApi {
             page = this.tabs.pages.get(params.id);
             if (!page) throw new DtError('tab not found: ' + params.id);
           }
+          else if (method === 'open') {
+            await this.tabs.sync();
+            // Reuse an idle exact URL match. Selection and lease acquisition
+            // stay atomic; opening a different URL may create another tab.
+            const targetUrl = new URL(params.url).href;
+            const candidates = [...this.tabs.pages].sort(([a], [b]) => Number(b === scope.currentTabId) - Number(a === scope.currentTabId));
+            for (const [id, candidate] of candidates) {
+              const matches = () => ['http:', 'https:', 'file:'].includes(new URL(params.url).protocol) && candidate.url() === targetUrl;
+              if (candidate.isClosed() || !matches()) continue;
+              if (this.previews.has(id)) await this.previews.get(id);
+              if (candidate.isClosed() || !matches()) continue;
+              if ([...this.scopes.scopes.values()].some(other => other.key !== key && other.currentTabId === id && this.busyScopes.has(other.key))) continue;
+              try { token = this.locks.acquire(id, key); }
+              catch (error) { if (error.code === -32003) continue; throw error; }
+              page = candidate; tabId = id; break;
+            }
+            if (!page) ({ page } = await this.tabs.new(scope));
+            else scope.currentTabId = tabId;
+          }
           else if (method === 'new') ({ page } = await this.tabs.new(scope));
           else page = await this.tabs.current(scope);
           tabId = method === 'use' ? params.id : scope.currentTabId;
           // All page commands receive a lease, including reads: a snapshot of a page being
           // changed concurrently is not reliable. The lease is held until the operation settles.
           await this.previews.get(tabId);
-          token = this.locks.acquire(tabId, key);
+          if (!token) token = this.locks.acquire(tabId, key);
           if (method === 'use') scope.currentTabId = tabId;
           this.persist();
           renewal = setInterval(() => this.locks.renew(tabId, token), Math.max(1, this.config.lockTtlMs / 3));
           renewal.unref();
           if (method !== 'overlay') await this.tabs.mark(page, scope);
           if (method === 'use' && params.activate) await page.bringToFront();
-          if (method === 'new' && params.url && params.url !== 'about:blank') {
+          if ((method === 'new' || (method === 'open' && page.url() !== new URL(params.url).href)) && params.url && params.url !== 'about:blank') {
             await navigation(page, 'goto', params.url, params.timeout ?? this.config.waitTimeoutMs);
           }
-          if (method === 'use' || method === 'new') result = { ok: true, tab: await this.tabs.describe(tabId, page) };
+          if (['use', 'new', 'open'].includes(method)) result = { ok: true, tab: await this.tabs.describe(tabId, page) };
           else result = await this.pageCommand(method, params, scope, page);
           const tab = await this.tabs.describe(tabId, page);
           this.emit({ type: 'tab.change', scope: key, tabId, title: tab.title, url: eventUrl(tab.url), reason: method });
@@ -283,7 +318,8 @@ export class BrowserAgentApi {
       throw new DtError('connect the browser before closing owned tabs', -32001);
     }
     for (const state of states) {
-      closedTabs += await this.tabs.closeOwned(state);
+      const shared = new Set([...this.scopes.scopes.values()].filter(other => !states.includes(other)).map(other => other.currentTabId));
+      closedTabs += await this.tabs.closeOwned(state, shared);
       this.scopes.scopes.delete(state.key);
       this.commands.delete(state.key);
       this.emit({ type: 'scope.destroy', scope: state.key, reason: 'kill' });

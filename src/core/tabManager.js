@@ -161,9 +161,10 @@ export class TabManager {
     return tab;
   }
 
-  async closeOwned(scopeState) {
+  async closeOwned(scopeState, preserved = new Set()) {
     let closed = 0;
     for (const id of scopeState.ownedTabs) {
+      if (preserved.has(id)) continue;
       const page = this.pages.get(id);
       if (page && !page.isClosed()) { await page.close(); closed++; }
     }

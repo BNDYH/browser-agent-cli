@@ -8,7 +8,7 @@ import { rpcCall } from '../../src/daemon/rpc.js';
 import { getConfig } from '../../src/config.js';
 import { EventFeed } from './events.js';
 import { emptyState, reduceEvent, disconnected } from './model.js';
-import { Preview, currentPage } from './preview.js';
+import { MultiPreview, currentPages } from './preview.js';
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const index = new URL('./renderer/index.html', import.meta.url).href;
@@ -38,26 +38,42 @@ app.on('will-quit', () => {
 });
 let state = emptyState();
 const feed = new EventFeed(config.socketPath);
-const mb = menubar({ index, icon: nativeImage.createEmpty(), preloadWindow: true,
+const mb = menubar({ index, icon: nativeImage.createEmpty(), preloadWindow: true, activateWithApp: false,
   tooltip: 'DT 页面预览', browserWindow: { width: 420, height: 260, resizable: false, movable: true, alwaysOnTop: true,
     frame: false, transparent: true, backgroundColor: '#00000000', hasShadow: true, roundedCorners: false,
-    acceptFirstMouse: true,
+    acceptFirstMouse: true, focusable: false,
     webPreferences: { preload: path.join(directory, 'preload.cjs'), nodeIntegration: false, contextIsolation: true, sandbox: true } } });
-app.on('second-instance', () => { if (mb.window) mb.showWindow(); });
-let view = { status: 'unavailable', image: null };
-const preview = new Preview(config.socketPath, () => state, (value) => {
-  const thumbnail = value.image ? nativeImage.createFromDataURL(value.image).resize({ width: 640 }) : null;
-  view = thumbnail ? { ...value, image: 'data:image/jpeg;base64,' + thumbnail.toJPEG(55).toString('base64') } : value;
-  if (thumbnail && !thumbnail.isEmpty() && mb.window && !mb.window.isDestroyed()) {
-    const { width, height } = thumbnail.getSize();
+const showWindow = mb.showWindow.bind(mb);
+mb.showWindow = (...args) => currentPages(state).length ? showWindow(...args) : Promise.resolve();
+app.on('second-instance', () => { if (mb.window && state.companionAutoShow !== false) mb.showWindow(); });
+let view = { pages: [] };
+const thumbnails = new Map();
+const preview = new MultiPreview(config.socketPath, () => state, (value) => {
+  for (const id of thumbnails.keys()) if (!value.pages.some(page => page.id === id)) thumbnails.delete(id);
+  const pages = value.pages.map(page => {
+    let cached = thumbnails.get(page.id);
+    if (cached?.source !== page.image) {
+      const thumbnail = page.image ? nativeImage.createFromDataURL(page.image).resize({ width: 640 }) : null;
+      cached = { source: page.image, image: thumbnail && !thumbnail.isEmpty()
+        ? 'data:image/jpeg;base64,' + thumbnail.toJPEG(55).toString('base64') : null };
+      thumbnails.set(page.id, cached);
+    }
+    return { ...page, image: cached?.image || null };
+  });
+  const thumbnail = pages.find(page => page.image);
+  const size = thumbnail ? nativeImage.createFromDataURL(thumbnail.image).getSize() : { width: 420, height: 260 };
+  if (mb.window && !mb.window.isDestroyed()) {
     const bounds = mb.window.getBounds();
     const available = screen.getDisplayMatching(bounds).workArea;
-    const targetHeight = Math.max(48, Math.min(available.height - 48, Math.round(bounds.width * height / width)));
-    if (bounds.height !== targetHeight) {
-      mb.window.setSize(bounds.width, targetHeight);
+    const offset = Math.min(192, Math.max(0, pages.length - 1) * 32);
+    const cardWidth = Math.min(420, available.width - 32 - offset);
+    const cardHeight = Math.max(80, Math.min(available.height - 32 - offset, Math.round(cardWidth * size.height / size.width)));
+    view = { pages, cardWidth, cardHeight, step: pages.length > 1 ? offset / (pages.length - 1) : 0 };
+    if (bounds.height !== cardHeight + offset || bounds.width !== cardWidth + offset) {
+      mb.window.setSize(cardWidth + offset, cardHeight + offset);
       keepWindowOnScreen(mb.window);
     }
-  }
+  } else view = { pages };
   if (mb.window && !mb.window.isDestroyed()) mb.window.webContents.send('dt:preview', view);
 });
 
@@ -65,11 +81,33 @@ function publish() {
   const active = state.scopes.filter((scope) => scope.currentCommand).length;
   mb.tray?.setTitle(active && state.connected ? '🔴 dt' : 'dt');
   mb.tray?.setToolTip(state.connected ? 'DT · 当前页面预览' : 'DT · 等待 daemon');
-  void preview.refresh();
+  if (!currentPages(state).length) {
+    view = { pages: [] };
+    mb.window?.webContents.send('dt:preview', view);
+    hidePreview(); return;
+  }
+  if (mb.window?.isVisible() && !preview.visible) preview.show();
+  else if (!mb.window?.isVisible() && preview.visible) { preview.hide(); stopPointer(); }
+  else void preview.refresh();
+}
+function hidePreview() {
+  mb.hideWindow();
+  // Native show/hide (including manual tray/test activation) can diverge from
+  // menubar's cached visibility flag. Always hide the actual BrowserWindow.
+  mb.window?.hide();
+  preview.hide(); stopPointer();
 }
 feed.on('event', (event) => {
+  const wasConnected = state.connected;
+  const wasEnabled = state.companionAutoShow !== false;
+  const hadPages = currentPages(state).length > 0;
   state = reduceEvent(state, event); publish();
-  if (event.type === 'cmd.start') mb.showWindow();
+  if ((event.type === 'tab.change' && event.reason === 'finish') || event.type === 'scope.destroy') {
+    if (!currentPages(state).length) hidePreview();
+  }
+  const enabled = state.companionAutoShow !== false;
+  if (!enabled && wasEnabled) hidePreview();
+  if (enabled && ((!hadPages && currentPages(state).length) || (event.type === 'cmd.start' && !['finish', 'kill'].includes(event.cmd) && event.companionAutoShow !== false) || (event.type === 'daemon.status' && (!wasConnected || !wasEnabled) && currentPages(state).length))) mb.showWindow();
 });
 feed.on('disconnected', () => { state = disconnected(state); publish(); });
 
@@ -107,19 +145,23 @@ function updatePointer(inside) {
 }
 function checkPointer() {
   const window = mb.window;
-  if (!window || window.isDestroyed() || !window.isVisible()) return updatePointer(false);
+  if (!window || window.isDestroyed() || !window.isVisible()) {
+    if (preview.visible) preview.hide();
+    return updatePointer(false);
+  }
   const { x, y } = screen.getCursorScreenPoint();
   const bounds = window.getBounds();
   updatePointer(x >= bounds.x && x < bounds.x + bounds.width && y >= bounds.y && y < bounds.y + bounds.height);
 }
 function stopPointer() { clearInterval(pointerTimer); pointerTimer = undefined; updatePointer(false); }
-ipcMain.handle('dt:preview', (event) => { checkSender(event); return view; });
+ipcMain.handle('dt:preview', (event) => { checkSender(event); if (mb.window.isVisible() && !preview.visible) preview.show(); return view; });
 ipcMain.handle('dt:pointer-inside', (event) => { checkSender(event); checkPointer(); return pointerInside; });
 let opening = false;
-ipcMain.handle('dt:open-page', async (event) => {
+ipcMain.handle('dt:open-page', async (event, id) => {
   checkSender(event);
-  const scope = currentPage(state);
-  if (!scope || scope.currentTab.id !== view.tab?.id) return { ok: false, message: '页面已变化，请等待预览更新' };
+  const page = view.pages.find(page => page.id === id);
+  const scope = currentPages(state).find(scope => JSON.stringify([scope.key, scope.createdAt, scope.currentTab.id]) === id);
+  if (!scope || scope.currentTab.id !== page?.tab?.id) return { ok: false, message: '页面已变化，请等待预览更新' };
   if (opening) return { ok: false, message: '正在打开页面' };
   opening = true;
   try {
@@ -133,11 +175,18 @@ ipcMain.handle('dt:open-page', async (event) => {
   } finally { opening = false; }
 });
 mb.on('before-load', () => {
-  mb.on('after-show', () => keepWindowOnScreen(mb.window));
-  mb.window.on('show', () => {
-    preview.show(); clearInterval(pointerTimer); checkPointer();
+  // menubar calls BrowserWindow.show(), which can activate the app on macOS
+  // even with focusable:false. Keep its positioning/toggle logic, but show inactive.
+  const showInactive = mb.window.showInactive.bind(mb.window);
+  mb.window.show = () => { if (currentPages(state).length) showInactive(); };
+  const startPreview = () => {
+    if (!preview.visible) preview.show();
+    clearInterval(pointerTimer); checkPointer();
     pointerTimer = setInterval(checkPointer, 100);
-  });
+  };
+  mb.on('after-show', () => { keepWindowOnScreen(mb.window); startPreview(); });
+  mb.window.on('show', startPreview);
+  mb.window.on('focus', startPreview);
   mb.window.on('hide', () => { endDrag(); preview.hide(); stopPointer(); });
   mb.window.on('blur', endDrag);
   mb.window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -145,8 +194,14 @@ mb.on('before-load', () => {
   mb.window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
 });
 mb.on('ready', () => {
-  mb.showWindow();
   mb.tray.on('right-click', () => mb.tray.popUpContextMenu(Menu.buildFromTemplate([
+    { label: '自动弹出预览', type: 'checkbox', checked: state.companionAutoShow !== false,
+      click: async (item) => {
+        try {
+          const reply = await rpcCall(config.socketPath, { jsonrpc: '2.0', id: randomUUID(), method: 'companion', params: { enabled: item.checked } });
+          if (reply.error) console.error(reply.error.message);
+        } catch (error) { console.error(error.message); }
+      } },
     { label: '查看当前页面', click: () => mb.showWindow() }, { type: 'separator' },
     { label: '退出 DT 面板', click: () => app.quit() },
   ])));

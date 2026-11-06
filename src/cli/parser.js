@@ -2,7 +2,7 @@ import { DtError } from '../errors.js';
 import { validateCommand } from '../validation.js';
 
 const VALUE_OPTIONS = new Set(['port', 'profile', 'session', 'task', 'timeout', 'delay']);
-const BOOLEAN_OPTIONS = new Set(['json', 'image', 'daemon', 'browser', 'full-page', 'no-redact', 'headless', 'extension', 'activate']);
+const BOOLEAN_OPTIONS = new Set(['json', 'image', 'daemon', 'browser', 'full-page', 'no-redact', 'headless', 'extension', 'activate', 'no-companion']);
 
 export function parseArgv(argv) {
   const command = argv[0] || 'help';
@@ -42,8 +42,8 @@ function requireArg(args, index, label) {
 
 export function toRpcCommand(parsed) {
   const allowed = {
-    launch: ['port', 'profile', 'headless'], connect: ['port', 'extension'], kill: ['daemon', 'browser'],
-    goto: ['timeout'], reload: ['timeout'], back: ['timeout'], new: ['timeout'], use: ['activate'],
+    launch: ['port', 'profile', 'headless', 'no-companion'], connect: ['port', 'extension', 'no-companion'], kill: ['daemon', 'browser'],
+    goto: ['timeout'], open: ['timeout'], reload: ['timeout'], back: ['timeout'], new: ['timeout'], use: ['activate'],
     snapshot: ['image'], shot: ['full-page'], har: ['no-redact'],
     click: ['timeout'], dblclick: ['timeout'], fill: ['timeout'], select: ['timeout'], wait: ['timeout'], type: ['timeout', 'delay'],
   };
@@ -55,13 +55,15 @@ export function toRpcCommand(parsed) {
   const command = rawCommand(parsed);
   if (parsed.options.extension && (parsed.options.port || parsed.positionals.length)) throw new DtError('connect --extension cannot take a CDP port', -32602);
   const limits = { launch: 1, connect: 1, disconnect: 0, status: 0, kill: 0, tabs: 0, use: 1, new: 1,
-    goto: 1, reload: 0, back: 0, snapshot: 0, shot: 1, title: 0, url: 0, reqs: 1, req: 1, res: 1,
+    goto: 1, open: 1, finish: 0, reload: 0, back: 0, snapshot: 0, shot: 1, title: 0, url: 0, reqs: 1, req: 1, res: 1,
     har: 1, reqclear: 0, click: 1, dblclick: 1, type: 2, fill: 2, select: 2, wait: 1, waitms: 1,
-    eval: 1, overlay: 1, run: 1, ck: 3, ls: 3 };
+    eval: 1, overlay: 1, companion: 1, run: 1, ck: 3, ls: 3 };
   if (parsed.positionals.length > limits[parsed.command]) throw new DtError('too many arguments', -32602);
   if (parsed.command === 'ls' && !['get', 'set'].includes(parsed.positionals[0]) && parsed.positionals.length > 1) throw new DtError('ls takes one selector', -32602);
   if (['ck', 'ls'].includes(parsed.command) && parsed.positionals[0] === 'get' && parsed.positionals.length > 2) throw new DtError('get takes at most one key', -32602);
   if (parsed.command === 'overlay' && !['on', 'off'].includes(parsed.positionals[0])) throw new DtError('overlay requires on or off', -32602);
+  if (parsed.command === 'companion' && parsed.positionals.length && !['on', 'off'].includes(parsed.positionals[0])) throw new DtError('companion requires on or off', -32602);
+  if (parsed.options['no-companion']) command[1].companion = false;
   validateCommand(...command);
   return command;
 }
@@ -72,11 +74,11 @@ function rawCommand(parsed) {
   if (command === 'launch') return ['launch', { port: o.port || a[0] ? Number(o.port || a[0]) : undefined, profile: o.profile, ...(o.headless ? { headless: true } : {}) }];
   if (command === 'connect') return ['connect', { port: o.port || a[0] ? Number(o.port || a[0]) : undefined, ...(o.extension ? { extension: true } : {}) }];
   if (['reload', 'back'].includes(command)) return [command, { timeout }];
-  if (['disconnect', 'status', 'tabs', 'title', 'url', 'reqclear'].includes(command)) return [command, {}];
+  if (['disconnect', 'status', 'tabs', 'title', 'url', 'reqclear', 'finish'].includes(command)) return [command, {}];
   if (command === 'kill') return ['kill', { daemon: Boolean(o.daemon), browser: Boolean(o.browser), session: o.session }];
   if (command === 'use') return ['use', { id: requireArg(a, 0, 'tab id'), ...(o.activate ? { activate: true } : {}) }];
   if (command === 'new') return ['new', { url: a[0] || 'about:blank', timeout }];
-  if (command === 'goto') return ['goto', { url: requireArg(a, 0, 'url'), timeout }];
+  if (['goto', 'open'].includes(command)) return [command, { url: requireArg(a, 0, 'url'), timeout }];
   if (command === 'snapshot') return ['snapshot', { image: Boolean(o.image) }];
   if (command === 'shot') return ['shot', { file: a[0], fullPage: Boolean(o['full-page']) }];
   if (command === 'reqs') return ['reqs', { filter: a[0] }];
@@ -88,6 +90,7 @@ function rawCommand(parsed) {
   if (command === 'waitms') return ['waitms', { ms: Number(requireArg(a, 0, 'milliseconds')) }];
   if (command === 'eval') return ['eval', { expression: requireArg(a, 0, 'JavaScript expression') }];
   if (command === 'overlay') return ['overlay', { enabled: requireArg(a, 0, 'on|off') === 'on' }];
+  if (command === 'companion') return ['companion', a.length ? { enabled: a[0] === 'on' } : {}];
   if (command === 'run') return ['run', { file: requireArg(a, 0, 'script file') }];
   if (command === 'ck') {
     const operation = requireArg(a, 0, 'cookie operation');

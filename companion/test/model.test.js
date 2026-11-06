@@ -1,12 +1,50 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { emptyState, reduceEvent, disconnected } from '../menubar/model.js';
-import { Preview, currentPage } from '../menubar/preview.js';
+import { Preview, MultiPreview, currentPage, currentPages } from '../menubar/preview.js';
 
 const task = (key, endedAt = 1) => ({ key, sessionId: key.split('/')[0], taskId: key.split('/')[1], createdAt: 'one',
   currentCommand: null, currentTab: { id: key, title: key }, lastCommand: { cmd: 'snapshot', endedAt } });
 const initial = () => reduceEvent(emptyState(), { type: 'daemon.status', revision: 1, browser: 'connected',
   scopes: [task('a/one'), task('b/two', 2)], activeCount: 0, idleMs: 0 });
+
+test('one session observes only its latest page, including across tasks', async () => {
+  let state = initial(); const views = [], calls = [];
+  const preview = new MultiPreview('/fixture.sock', () => state, view => views.push(view), async (_path, request) => {
+    calls.push(request.params.tabId); return { result: { tabId: request.params.tabId, image: 'frame' } };
+  });
+  preview.visible = true; await preview.refresh();
+  state.scopes.push(task('a/new-task', 100));
+  await preview.refresh();
+  assert.deepEqual(new Set(views.at(-1).pages.map(page => page.tab.id)), new Set(['a/new-task', 'b/two']));
+  assert.equal(preview.entries.size, 2);
+  assert.equal(calls.filter(id => id === 'a/one').length, 1, 'old session page is no longer captured');
+  preview.hide();
+});
+
+test('multi-page previews capture independently, deduplicate tabs, and remove stale cards immediately', async () => {
+  let state = initial(); const calls = [], views = [], releases = [];
+  state.scopes.push({ ...task('duplicate/page'), currentTab: state.scopes[0].currentTab });
+  assert.equal(currentPages(state).length, 2);
+  const preview = new MultiPreview('/fixture.sock', () => state, view => views.push(view), async (_path, request) => {
+    calls.push(request); return new Promise(resolve => releases.push(() => resolve({ result: { tabId: request.params.tabId, image: request.params.tabId } })));
+  });
+  await preview.refresh(); assert.equal(calls.length, 0);
+  preview.visible = true;
+  const pending = preview.refresh();
+  assert.equal(calls.length, 2);
+  assert.equal(views.at(-1).pages.length, 2);
+  releases[1](); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(views.at(-1).pages.filter(page => page.image).length, 1);
+  state = disconnected(state); await preview.refresh();
+  assert.deepEqual(views.at(-1).pages, [], 'disconnect clears even with a capture pending');
+  releases[0](); await pending;
+  assert.deepEqual(views.at(-1).pages, [], 'late frame cannot recreate a disconnected card');
+  state = initial(); const reconnected = preview.refresh();
+  const again = [...releases].slice(2); again.forEach(release => release());
+  await reconnected;
+  preview.hide();
+});
 
 test('preview follows the executing scope, then the most recently operated page', () => {
   let state = initial();

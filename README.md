@@ -12,14 +12,16 @@ npm link
 export DT_SESSION=my-session
 export DT_TASK=default
 dt launch --json
-dt goto https://example.com --json
+dt open https://example.com --json
 dt snapshot --json
-dt kill
+dt finish --json
 ```
 
 `npm run demo` 可演示一次完整的 snapshot → 填表 → 保存 → 抓包流程。它启动临时独立 Chrome，结果存于 `artifacts/demo`，十分钟后自动关闭演示实例。
 
 `launch` 使用独立持久 profile，第一次使用需在这个浏览器里登录。它不会复制日常 Chrome 的登录数据。`connect 9222` 可连接已经开启调试端口的 Chrome。
+
+打开链接优先用 `dt open <url>`：跨 session 复用空闲的完整 URL 匹配页，没有匹配页时新建，不强制覆盖当前 tab。`dt new <url>` 始终新建副本。同一 session 只预览最近操作的一页，不同时监听多个 tab 的缩略图；不同 session 可同时展示。页面锁只覆盖单条命令，多个 session 后续操作同页仍需串行。任务结束执行 `dt finish --json`，移除本 scope 的预览并释放当前目标，保留标签页和连接供后续复用；最后一张预览移除后小窗收起。需要关闭本 scope 专属标签页时使用 `dt kill`，仍被其他 scope 选中的页面会保留。
 
 ```bash
 # macOS 手动启动调试 Chrome
@@ -139,6 +141,6 @@ macOS 上执行浏览器操作命令会自动启动页面小窗，后续操作�
 npm --prefix companion ci
 ```
 
-也可用 `npm --prefix companion start` 单独启动面板。设置 `DT_COMPANION=0` 可关闭 CLI 自动启动；`help`、`status` 和 `kill` 不启动面板。没有安装 Electron 时 CLI 仍可独立使用，面板启动日志位于状态目录下的 `companion.log`。
+也可用 `npm --prefix companion start` 单独启动面板。预览默认自动弹出；`dt companion off` 或菜单栏右键取消“自动弹出预览”会隐藏小窗，并在本次连接期间禁止后续命令主动弹窗，仍可点击菜单栏手动打开。`dt companion on` 恢复，`dt companion` 查看状态。连接时可用 `dt connect --no-companion` 或 `dt launch --no-companion` 关闭；下次成功 `connect` / `launch` 默认恢复开启。设置 `DT_COMPANION=0` 可关闭 CLI 自动启动；`help`、`status` 和 `kill` 不启动面板。没有安装 Electron 时 CLI 仍可独立使用，面板启动日志位于状态目录下的 `companion.log`。
 
 扩展、窗口和有界面标签页验证分别使用 `DT_EXTENSION_INTEGRATION=1`、`DT_COMPANION_INTEGRATION=1`、`DT_FOCUS_INTEGRATION=1` 配合 `npm run test:integration`。有界面测试需可访问 macOS 桌面。

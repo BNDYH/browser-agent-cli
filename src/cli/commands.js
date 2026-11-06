@@ -95,11 +95,15 @@ export async function execute(argv, config = getConfig(), defaults = {}) {
   // Resolve paths in the caller's directory, not the persistent daemon's working directory.
   for (const key of ['file', 'profile']) if (params[key]) params[key] = path.resolve(expandHome(params[key]));
   await ensureDaemon(config);
-  if (!params.headless && !['kill', 'status', 'disconnect', 'tasks', 'sessions'].includes(method)) ensureCompanion(config);
   const response = await rpcCall(config.socketPath,
     { jsonrpc: '2.0', id: Date.now(), method, params, scope },
     Math.max(30_000, Number(params.ms ?? params.timeout ?? config.waitTimeoutMs) + 15_000));
   if (response.error) throw new DtError(response.error.message, response.error.code, response.error.data);
+  if (!params.headless && !['kill', 'status', 'disconnect', 'finish'].includes(method)) {
+    const preference = method === 'companion' ? response : await rpcCall(config.socketPath,
+      { jsonrpc: '2.0', id: Date.now(), method: 'companion', params: {}, scope });
+    if (preference.result?.autoShow) ensureCompanion(config);
+  }
   return { result: response.result, json: Boolean(parsed.options.json || defaults.json) };
 }
 

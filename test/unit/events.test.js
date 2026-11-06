@@ -8,6 +8,27 @@ import { getConfig } from '../../src/config.js';
 import { eventUrl } from '../../src/events.js';
 import { formatError } from '../../src/errors.js';
 
+test('preview auto-popup remains disabled across commands and resets on a new connection', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dt-companion-switch-'));
+  const config = { ...getConfig(), stateDir: root, shotsDir: path.join(root, 'shots'), statePath: path.join(root, 'state.json'), auditPath: path.join(root, 'audit.log') };
+  const events = [];
+  const api = new BrowserAgentApi(config, event => events.push(event));
+  const identity = { sessionId: 'switch', taskId: 'test' };
+  api.connection.connect = async () => ({ ok: true });
+  api.tabs.sync = async () => {};
+  api.tabs.list = async () => [];
+  assert.equal((await api.dispatch('companion')).autoShow, true);
+  await api.dispatch('connect', { companion: false }, identity);
+  assert.equal(events.find(event => event.type === 'cmd.start').companionAutoShow, false);
+  await api.dispatch('reqclear', {}, identity);
+  assert.equal((await api.dispatch('companion')).autoShow, false);
+  await api.dispatch('connect', {}, identity);
+  assert.equal((await api.dispatch('companion')).autoShow, true);
+  await api.dispatch('companion', { enabled: false });
+  assert.equal(api.eventSnapshot().companionAutoShow, false);
+  assert.equal(events.at(-1).companionAutoShow, false);
+});
+
 test('event URLs remove credentials and non-web payloads', () => {
   assert.equal(eventUrl('https://user:secret@example.com/a?token=secret#secret'), 'https://example.com/a');
   assert.equal(eventUrl('data:text/html,secret'), 'data:');

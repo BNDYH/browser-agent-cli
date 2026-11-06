@@ -61,16 +61,19 @@ Connection: launch, connect [port], disconnect, status, kill
 Extension:  extension info|install, connect --extension (existing ordinary Chrome tabs)
 Observe:    snapshot [--image], shot [file], title, url
 Tabs:       tabs, use <id> [--activate], new [url]
-Navigate:   goto <url>, reload, back
+Navigate:   open <url> (reuse idle matching tab), goto <url>, reload, back
+Finish:     finish (release current target/preview; keep browser tab)
 Network:    reqs [filter], req <n>, res <n>, har [file], reqclear
 Actions:    click, dblclick, type, fill, select, wait, waitms
 Inject:     eval <js>, ls <selector>, ck get|set|clear, ls get|set
 Other:      overlay on|off, run <script.js>, repl, install-skill
+Preview:    companion [on|off] (auto-popup for this connection; default on)
 
 Global options: --json --session <id> --task <id>
 repl inherits these options; per-line scope options override them for one command.
 use --activate explicitly shows the tab; new tabs are created in the background.
 launch: --port <n> --profile <dir> --headless
+connect/launch: --no-companion disables preview auto-popup until the next connection
 Actions/navigation: --timeout <ms>; type: --delay <ms>
 kill clears current scope; --session [id] clears a session; --daemon stops daemon.
 kill --daemon --browser also closes the Chrome launched by dt.

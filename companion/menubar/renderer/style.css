@@ -2,12 +2,15 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }
 body { position: relative; border: 0; border-radius: 14px; background: transparent; -webkit-app-region: no-drag; }
+.card { position: absolute; border-radius: 14px; overflow: hidden; box-shadow: 0 4px 14px #0005; }
+.card:focus-visible { outline: 2px solid #8ac4ff; outline-offset: -2px; }
 #drag-surface { position: absolute; inset: 0; z-index: 1; pointer-events: auto; -webkit-app-region: no-drag; touch-action: none; user-select: none; cursor: grab; }
 #drag-surface.dragging { cursor: grabbing; }
 header { position: absolute; top: 0; right: 0; z-index: 2; width: 48px; height: 48px; -webkit-app-region: no-drag; }
 main { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; border-radius: inherit; overflow: hidden; background: #090909; }
 #preview { display: block; width: 100%; height: 100%; object-fit: cover; }
-header div, footer { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+header div { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+footer { position: absolute; bottom: 0; left: 0; right: 0; z-index: 2; padding: 3px 10px; color: #fff; background: #151a20bd; pointer-events: none; font-size: 10px; }
 #open-page { position: absolute; z-index: 1; top: 8px; right: 8px; display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: #242a30d9; color: #fff; cursor: pointer; opacity: 0; -webkit-app-region: no-drag; }
 body.pointer-inside #open-page { opacity: 1; }
 #open-page:hover { background: #151a20f2; }
@@ -15,5 +18,5 @@ body.pointer-inside #open-page { opacity: 1; }
 #open-page:focus-visible { outline: 2px solid #8ac4ff; outline-offset: 2px; }
 #open-page:disabled { color: #a4abb2; cursor: default; }
 #empty { margin: 0; padding: 12px; color: #9e9e9e; }
-#notice { position: absolute; z-index: 3; bottom: 8px; left: 8px; right: 8px; margin: 0; padding: 8px 10px; border-radius: 8px; background: #242a30ed; color: white; pointer-events: none; }
+#notice { position: absolute; z-index: 2147483647; bottom: 8px; left: 8px; right: 8px; margin: 0; padding: 8px 10px; border-radius: 8px; background: #242a30ed; color: white; pointer-events: none; }
 [hidden] { display: none !important; }

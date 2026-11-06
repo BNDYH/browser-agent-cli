@@ -89,6 +89,13 @@ test('real Chrome: CLI, scopes, AX refs, capture, restart and shutdown', { skip:
   t.after(() => observer.close());
   const observed = observer.contexts()[0].pages().find((page) => page.url() === url + '/');
   assert.equal(await observed.locator('[data-dt-overlay]').count(), 0, 'successful command releases visual control');
+  await observed.locator('input').fill('keep-this-draft');
+  const reused = await run('open', url, '--session', 'reuse-session');
+  assert.equal(reused.tab.id, firstTab, 'open reuses another idle session page');
+  assert.equal(await observed.locator('input').inputValue(), 'keep-this-draft', 'reuse must not reload form state');
+  await run('finish', '--session', 'reuse-session');
+  assert.equal((await run('status', '--session', 'reuse-session')).currentTab, null);
+  assert.equal(observed.isClosed(), false, 'finish preserves the reusable browser page');
   await observed.goto(url + '/?event-secret#private');
   await until(() => events.some((event) => event.type === 'tab.change' && event.url === url + '/'));
   await run('goto', url);
